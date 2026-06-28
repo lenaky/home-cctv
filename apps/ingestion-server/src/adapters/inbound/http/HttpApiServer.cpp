@@ -42,6 +42,7 @@ static json streamInfoToJson(const domain::StreamInfo& s) {
         {"width", s.width},
         {"height", s.height},
         {"fps", s.fps},
+        {"bitrate", s.bitrate},
         {"hls_playlist_url", s.hls_playlist_url},
         {"last_error", s.last_error.value_or("")},
     };

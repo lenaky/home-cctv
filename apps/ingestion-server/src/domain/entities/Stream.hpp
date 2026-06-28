@@ -14,6 +14,7 @@ struct StreamInfo {
     int width = 0;
     int height = 0;
     double fps = 0.0;
+    int64_t bitrate = 0;  // bits per second
     std::chrono::system_clock::time_point started_at;
     std::string hls_playlist_url;
     std::optional<std::string> last_error;

@@ -42,6 +42,7 @@ export interface StreamInfo {
   width: number
   height: number
   fps: number
+  bitrate: number
   hls_playlist_url: string
   last_error: string
 }

@@ -73,6 +73,8 @@ Result<domain::StreamInfo> StreamManager::startStream(const std::string& camera_
                 info_ptr->codec_name = avcodec_get_name(src_st->codecpar->codec_id);
                 info_ptr->width = src_st->codecpar->width;
                 info_ptr->height = src_st->codecpar->height;
+                info_ptr->fps = av_q2d(src_st->avg_frame_rate);
+                info_ptr->bitrate = src_st->codecpar->bit_rate;
                 wl.unlock();
 
                 camera_repo_->updateStatus(camera_id, domain::CameraStatus::Active);
