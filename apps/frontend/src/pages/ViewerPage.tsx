@@ -43,6 +43,7 @@ export default function ViewerPage() {
 
   const handleBitrateUpdate = useCallback((bps: number) => setLiveBitrate(bps), [])
 
+  const isConnecting = streamInfo?.status === StreamStatus.Connecting
   const isStreaming = streamInfo?.status === StreamStatus.Streaming
   const hlsSrc = isStreaming ? streamInfo.hls_playlist_url : ''
 
@@ -70,9 +71,11 @@ export default function ViewerPage() {
         <h1 className="text-lg font-bold text-white">{camera?.name ?? '로딩 중...'}</h1>
         {streamInfo && (
           <span className={`text-xs px-2 py-0.5 rounded-full ${
-            isStreaming ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-300'
+            isStreaming ? 'bg-green-500 text-white' :
+            isConnecting ? 'bg-yellow-600 text-white' :
+            'bg-gray-600 text-gray-300'
           }`}>
-            {isStreaming ? 'LIVE' : '대기 중'}
+            {isStreaming ? 'LIVE' : isConnecting ? '연결 중' : '대기 중'}
           </span>
         )}
       </div>
@@ -90,9 +93,17 @@ export default function ViewerPage() {
             className="w-full h-full"
             onBitrateUpdate={handleBitrateUpdate}
           />
+        ) : isConnecting ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-500">
+            <svg className="animate-spin h-8 w-8 text-gray-600" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+            <p className="text-sm">카메라에 연결 중...</p>
+          </div>
         ) : (
           <div className="flex items-center justify-center h-full text-gray-600">
-            <p>스트림을 시작하려면 카메라 관리 페이지에서 시작하세요</p>
+            <p className="text-sm">스트림을 시작하려면 카메라 관리 페이지에서 시작하세요</p>
           </div>
         )}
       </div>

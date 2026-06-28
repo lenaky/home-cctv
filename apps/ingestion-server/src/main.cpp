@@ -75,6 +75,14 @@ int main(int argc, char** argv) {
     auto http_server = std::make_unique<homecctv::adapters::HttpApiServer>(
         camera_svc, stream_mgr, api_config);
 
+    // ── Reset stale Active status left over from previous run ─────────────────
+    if (auto cameras = camera_repo->findAll(); cameras.is_ok()) {
+        for (const auto& cam : cameras.value()) {
+            if (cam.status == homecctv::domain::CameraStatus::Active)
+                camera_repo->updateStatus(cam.id, homecctv::domain::CameraStatus::Inactive, std::nullopt);
+        }
+    }
+
     // ── Graceful shutdown ──────────────────────────────────────────────────────
     shutdown_handler = [&](int) {
         spdlog::info("Shutting down...");
