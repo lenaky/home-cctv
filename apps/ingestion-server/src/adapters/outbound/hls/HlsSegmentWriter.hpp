@@ -36,6 +36,7 @@ private:
     AVStream* out_stream_ = nullptr;
     bool errored_ = false;
     int64_t next_dts_ = 0;
+    int64_t last_dts_ = AV_NOPTS_VALUE;
 };
 
 }  // namespace homecctv::adapters

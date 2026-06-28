@@ -51,6 +51,7 @@ Result<void> HlsSegmentWriter::open(const AVStream* source_stream) {
 
     errored_ = false;
     next_dts_ = 0;
+    last_dts_ = AV_NOPTS_VALUE;
     spdlog::info("HLS writer opened: {}", playlist);
     return Result<void>::Ok();
 }
@@ -77,7 +78,16 @@ Result<void> HlsSegmentWriter::writePacket(const AVPacket* pkt,
     if (out_pkt->pts == AV_NOPTS_VALUE)
         out_pkt->pts = out_pkt->dts = next_dts_;
 
-    // Advance counter for next synthetic use
+    // Enforce strictly monotonically increasing DTS (muxer requirement)
+    // last_dts_ starts at AV_NOPTS_VALUE (INT64_MIN), so first packet always passes
+    if (out_pkt->dts <= last_dts_) {
+        int64_t pts_dts_diff = (out_pkt->pts != AV_NOPTS_VALUE) ? (out_pkt->pts - out_pkt->dts) : 0;
+        out_pkt->dts = last_dts_ + 1;
+        out_pkt->pts = out_pkt->dts + pts_dts_diff;
+    }
+    last_dts_ = out_pkt->dts;
+
+    // Advance synthetic counter
     int64_t dur = (out_pkt->duration > 0)
                       ? out_pkt->duration
                       : av_rescale_q(1, AVRational{1, 30}, out_stream_->time_base);
@@ -103,6 +113,7 @@ Result<void> HlsSegmentWriter::close() {
         out_stream_ = nullptr;
     }
     errored_ = false;
+    last_dts_ = AV_NOPTS_VALUE;
     return Result<void>::Ok();
 }
 
