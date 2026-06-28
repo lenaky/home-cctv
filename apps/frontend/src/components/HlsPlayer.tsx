@@ -44,6 +44,7 @@ export default function HlsPlayer({ src, className = '', onBitrateUpdate }: HlsP
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const bitrateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const [playing, setPlaying] = useState(false)
   const [muted, setMuted] = useState(true)
@@ -95,10 +96,22 @@ export default function HlsPlayer({ src, className = '', onBitrateUpdate }: HlsP
         else hls.destroy()
       })
       if (onBitrateUpdate) {
+        let bpsAccum = 0
+        let fragCount = 0
+        bitrateIntervalRef.current = setInterval(() => {
+          if (fragCount > 0) {
+            onBitrateUpdate(bpsAccum / fragCount)
+            bpsAccum = 0
+            fragCount = 0
+          }
+        }, 1000)
         hls.on(Hls.Events.FRAG_LOADED, (_e, data) => {
           const dur = data.frag.duration
           const loaded = data.frag.stats.loaded
-          if (dur > 0 && loaded > 0) onBitrateUpdate((loaded * 8) / dur)
+          if (dur > 0 && loaded > 0) {
+            bpsAccum += (loaded * 8) / dur
+            fragCount++
+          }
         })
       }
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -111,6 +124,10 @@ export default function HlsPlayer({ src, className = '', onBitrateUpdate }: HlsP
     return () => {
       video.removeEventListener('play', onPlay)
       video.removeEventListener('pause', onPause)
+      if (bitrateIntervalRef.current) {
+        clearInterval(bitrateIntervalRef.current)
+        bitrateIntervalRef.current = null
+      }
       hlsRef.current?.destroy()
       hlsRef.current = null
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
