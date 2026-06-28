@@ -13,6 +13,7 @@ export default function AdminPage() {
   const [modal, setModal] = useState<Modal>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
 
   const fetchCameras = useCallback(async () => {
     try {
@@ -51,13 +52,27 @@ export default function AdminPage() {
   }
 
   const handleStart = async (id: string) => {
-    await streamsApi.start(id)
-    await fetchCameras()
+    setPendingIds(s => new Set(s).add(id))
+    try {
+      await streamsApi.start(id)
+      await fetchCameras()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setPendingIds(s => { const n = new Set(s); n.delete(id); return n })
+    }
   }
 
   const handleStop = async (id: string) => {
-    await streamsApi.stop(id)
-    await fetchCameras()
+    setPendingIds(s => new Set(s).add(id))
+    try {
+      await streamsApi.stop(id)
+      await fetchCameras()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setPendingIds(s => { const n = new Set(s); n.delete(id); return n })
+    }
   }
 
   return (
@@ -91,6 +106,7 @@ export default function AdminPage() {
             <CameraCard
               key={cam.id}
               camera={cam}
+              pending={pendingIds.has(cam.id)}
               onStart={() => void handleStart(cam.id)}
               onStop={() => void handleStop(cam.id)}
               onEdit={() => setModal({ type: 'edit', camera: cam })}

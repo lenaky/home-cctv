@@ -16,13 +16,23 @@ const statusColor: Record<CameraStatus, string> = {
 
 interface CameraCardProps {
   camera: Camera
+  pending?: boolean
   onStart: () => void
   onStop: () => void
   onEdit: () => void
   onDelete: () => void
 }
 
-export default function CameraCard({ camera, onStart, onStop, onEdit, onDelete }: CameraCardProps) {
+function Spinner() {
+  return (
+    <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
+  )
+}
+
+export default function CameraCard({ camera, pending = false, onStart, onStop, onEdit, onDelete }: CameraCardProps) {
   const navigate = useNavigate()
   const isActive = camera.status === CameraStatus.Active
 
@@ -33,8 +43,8 @@ export default function CameraCard({ camera, onStart, onStop, onEdit, onDelete }
           <h3 className="font-semibold text-white">{camera.name}</h3>
           <p className="text-xs text-gray-500 font-mono mt-0.5 break-all">{camera.rtsp_url}</p>
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full text-white shrink-0 ml-2 ${statusColor[camera.status]}`}>
-          {statusLabel[camera.status]}
+        <span className={`text-xs px-2 py-0.5 rounded-full text-white shrink-0 ml-2 ${pending ? 'bg-yellow-600' : statusColor[camera.status]}`}>
+          {pending ? '처리중...' : statusLabel[camera.status]}
         </span>
       </div>
 
@@ -47,23 +57,26 @@ export default function CameraCard({ camera, onStart, onStop, onEdit, onDelete }
           <>
             <button
               onClick={() => navigate(`/viewer/${camera.id}`)}
-              className="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+              disabled={pending}
+              className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 rounded text-xs font-medium transition-colors"
             >
               라이브 보기
             </button>
             <button
               onClick={onStop}
-              className="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+              disabled={pending}
+              className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-1.5"
             >
-              중지
+              {pending ? <><Spinner />중지 중</> : '중지'}
             </button>
           </>
         ) : (
           <button
             onClick={onStart}
-            className="bg-green-700 hover:bg-green-600 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+            disabled={pending}
+            className="bg-green-700 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-1.5"
           >
-            시작
+            {pending ? <><Spinner />시작 중</> : '시작'}
           </button>
         )}
         <button
