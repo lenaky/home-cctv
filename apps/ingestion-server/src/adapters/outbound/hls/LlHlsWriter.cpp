@@ -22,7 +22,18 @@ LlHlsWriter::~LlHlsWriter() { close(); }
 // ---------------------------------------------------------------------------
 
 void LlHlsWriter::setAudioStream(const AVStream* audio_stream) {
-    pending_audio_ = audio_stream;
+    // Only codecs natively supported in fMP4/HLS containers
+    static constexpr AVCodecID kSupportedAudio[] = {
+        AV_CODEC_ID_AAC, AV_CODEC_ID_AAC_LATM,
+        AV_CODEC_ID_MP3, AV_CODEC_ID_AC3,
+        AV_CODEC_ID_OPUS,
+    };
+    AVCodecID id = audio_stream->codecpar->codec_id;
+    for (auto supported : kSupportedAudio) {
+        if (id == supported) { pending_audio_ = audio_stream; return; }
+    }
+    spdlog::warn("LL-HLS: audio codec {} not supported in MP4, skipping audio track",
+                 avcodec_get_name(id));
 }
 
 Result<void> LlHlsWriter::open(const AVStream* source_stream) {
@@ -206,8 +217,34 @@ void LlHlsWriter::writeInitSegment(const AVStream* video_stream) {
 
     AVDictionary* opts = nullptr;
     av_dict_set(&opts, "movflags", "frag_custom+empty_moov+default_base_moof", 0);
-    avformat_write_header(ctx_, &opts);
+    int ret = avformat_write_header(ctx_, &opts);
     av_dict_free(&opts);
+
+    if (ret < 0) {
+        char errbuf[AV_ERROR_MAX_STRING_SIZE];
+        av_strerror(ret, errbuf, sizeof(errbuf));
+        spdlog::error("LL-HLS avformat_write_header failed: {}", errbuf);
+        // Retry video-only
+        if (out_audio_stream_) {
+            avio_closep(&ctx_->pb);
+            avformat_free_context(ctx_);
+            ctx_ = nullptr;
+            out_audio_stream_ = nullptr;
+            pending_audio_ = nullptr;
+            avformat_alloc_output_context2(&ctx_, nullptr, "mp4", nullptr);
+            out_video_stream_ = avformat_new_stream(ctx_, nullptr);
+            avcodec_parameters_copy(out_video_stream_->codecpar, video_stream->codecpar);
+            out_video_stream_->time_base = video_stream->time_base;
+            if (out_video_stream_->codecpar->codec_id == AV_CODEC_ID_HEVC)
+                out_video_stream_->codecpar->codec_tag = MKTAG('h', 'v', 'c', '1');
+            avio_open(&ctx_->pb, init_path.c_str(), AVIO_FLAG_WRITE);
+            opts = nullptr;
+            av_dict_set(&opts, "movflags", "frag_custom+empty_moov+default_base_moof", 0);
+            [[maybe_unused]] int ret2 = avformat_write_header(ctx_, &opts);
+            av_dict_free(&opts);
+            spdlog::warn("LL-HLS init.mp4 written video-only (audio header failed)");
+        }
+    }
 
     avio_closep(&ctx_->pb);
     spdlog::debug("LL-HLS init.mp4 written: {}", init_path);
