@@ -80,10 +80,16 @@ export default function HlsPlayer({ src, className = '', onBitrateUpdate }: HlsP
     if (Hls.isSupported()) {
       const hls = new Hls({
         lowLatencyMode: true,
-        liveSyncDurationCount: 1,
-        liveMaxLatencyDurationCount: 3,
+        // PART-HOLD-BACK=0.6s → target latency must be ≥ 0.6s
+        // 3 × PART-TARGET(0.2s) = 0.6s → aligns with hold-back
+        liveSyncDurationCount: 3,
+        // Give 3s headroom before catch-up kicks in; prevents constant seek attempts
+        liveMaxLatencyDurationCount: 15,
         liveDurationInfinity: true,
         enableWorker: true,
+        // Limit buffer to avoid drifting further from live edge
+        maxBufferLength: 4,
+        maxMaxBufferLength: 4,
       })
       hlsRef.current = hls
       hls.loadSource(src)
