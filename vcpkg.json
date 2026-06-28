@@ -1,0 +1,22 @@
+{
+  "name": "home-cctv",
+  "version-string": "0.1.0",
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "features": ["avcodec", "avformat", "avutil", "swscale", "swresample"]
+    },
+    "grpc",
+    "boost-asio",
+    "boost-beast",
+    "boost-system",
+    "boost-uuid",
+    {
+      "name": "unofficial-sqlite3",
+      "platform": "!emscripten"
+    },
+    "nlohmann-json",
+    "spdlog",
+    "cpp-httplib"
+  ]
+}

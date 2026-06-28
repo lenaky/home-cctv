@@ -1,0 +1,25 @@
+build/
+.cache/
+*.user
+
+# vcpkg installed packages (managed by vcpkg)
+vcpkg_installed/
+
+# frontend
+apps/frontend/node_modules/
+apps/frontend/dist/
+
+# runtime data
+data/
+*.db
+*.db-journal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

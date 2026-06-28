@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package homecctv.v1;
+
+option cc_generic_services = false;
+
+service StreamService {
+    rpc StartStream(StartStreamRequest) returns (StartStreamResponse);
+    rpc StopStream(StopStreamRequest) returns (StopStreamResponse);
+    rpc GetStreamStatus(GetStreamStatusRequest) returns (GetStreamStatusResponse);
+    rpc WatchStreamEvents(WatchStreamEventsRequest) returns (stream StreamEvent);
+}
+
+enum StreamStatus {
+    STREAM_STATUS_UNSPECIFIED = 0;
+    STREAM_STATUS_IDLE = 1;
+    STREAM_STATUS_CONNECTING = 2;
+    STREAM_STATUS_STREAMING = 3;
+    STREAM_STATUS_ERROR = 4;
+}
+
+enum StreamEventType {
+    STREAM_EVENT_UNSPECIFIED = 0;
+    STREAM_EVENT_STARTED = 1;
+    STREAM_EVENT_STOPPED = 2;
+    STREAM_EVENT_ERROR = 3;
+    STREAM_EVENT_RECONNECTING = 4;
+}
+
+message StreamInfo {
+    string camera_id = 1;
+    StreamStatus status = 2;
+    string codec_name = 3;
+    int32 width = 4;
+    int32 height = 5;
+    double fps = 6;
+    int64 started_at = 7;
+    string hls_playlist_url = 8;
+}
+
+message StartStreamRequest {
+    string camera_id = 1;
+}
+
+message StartStreamResponse {
+    StreamInfo stream = 1;
+}
+
+message StopStreamRequest {
+    string camera_id = 1;
+}
+
+message StopStreamResponse {
+    bool success = 1;
+}
+
+message GetStreamStatusRequest {
+    string camera_id = 1;
+}
+
+message GetStreamStatusResponse {
+    StreamInfo stream = 1;
+}
+
+message WatchStreamEventsRequest {
+    string camera_id = 1;
+}
+
+message StreamEvent {
+    string camera_id = 1;
+    StreamEventType type = 2;
+    string message = 3;
+    int64 timestamp = 4;
+}
