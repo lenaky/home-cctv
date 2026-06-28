@@ -16,8 +16,10 @@ export default function HlsPlayer({ src, className = '' }: HlsPlayerProps) {
 
     if (Hls.isSupported()) {
       const hls = new Hls({
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 5,
+        lowLatencyMode: true,
+        liveSyncDurationCount: 1,
+        liveMaxLatencyDurationCount: 3,
+        liveDurationInfinity: true,
         enableWorker: true,
       })
       hlsRef.current = hls

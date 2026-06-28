@@ -11,7 +11,7 @@
 #include "domain/ports/outbound/ICameraRepository.hpp"
 #include "domain/ports/outbound/IStreamEventPublisher.hpp"
 
-namespace homecctv::adapters { class RtspReceiver; class HlsSegmentWriter; class FMp4Writer; }
+namespace homecctv::adapters { class RtspReceiver; class LlHlsWriter; class FMp4Writer; }
 
 namespace homecctv::application {
 
@@ -37,7 +37,7 @@ public:
 private:
     struct ActiveStream {
         std::unique_ptr<adapters::RtspReceiver> receiver;
-        std::unique_ptr<adapters::HlsSegmentWriter> hls_writer;
+        std::unique_ptr<adapters::LlHlsWriter> hls_writer;
         std::unique_ptr<adapters::FMp4Writer> recording_writer;
         domain::StreamInfo info;
         std::atomic<bool> first_packet{true};

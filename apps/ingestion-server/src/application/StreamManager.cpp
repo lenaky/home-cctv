@@ -5,7 +5,7 @@
 #include <spdlog/spdlog.h>
 
 #include "adapters/inbound/rtsp/RtspReceiver.hpp"
-#include "adapters/outbound/hls/HlsSegmentWriter.hpp"
+#include "adapters/outbound/hls/LlHlsWriter.hpp"
 #include "adapters/outbound/storage/FMp4Writer.hpp"
 
 namespace homecctv::application {
@@ -33,14 +33,14 @@ Result<domain::StreamInfo> StreamManager::startStream(const std::string& camera_
     adapters::RtspOptions rtsp_opts;
     rtsp_opts.transport = (cam.settings.transport == domain::RtspTransport::Udp) ? "udp" : "tcp";
 
-    adapters::HlsOptions hls_opts;
-    hls_opts.segment_duration = cam.settings.segment_duration_sec;
-    hls_opts.list_size = cam.settings.hls_list_size;
+    adapters::LlHlsConfig ll_cfg;
+    ll_cfg.segment_duration = cam.settings.segment_duration_sec;
+    ll_cfg.list_size        = cam.settings.hls_list_size;
 
     auto stream = std::make_unique<ActiveStream>();
 
-    stream->hls_writer = std::make_unique<adapters::HlsSegmentWriter>(
-        config_.hls_root, camera_id, config_.egress_base_url, hls_opts);
+    stream->hls_writer = std::make_unique<adapters::LlHlsWriter>(
+        config_.hls_root, camera_id, config_.egress_base_url, ll_cfg);
 
     if (cam.settings.recording_enabled) {
         auto rec_root = cam.settings.recording_path.empty()
