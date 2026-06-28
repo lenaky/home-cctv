@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Camera } from '../types'
+import { CameraStatus, defaultSettings } from '../types'
 import { camerasApi } from '../api/cameras'
 import { streamsApi } from '../api/streams'
 import CameraCard from '../components/CameraCard'
 import CameraForm from '../components/CameraForm'
-import { defaultSettings } from '../types'
 
 type Modal = { type: 'add' } | { type: 'edit'; camera: Camera } | null
 
@@ -14,11 +14,18 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
+  const [connectingIds, setConnectingIds] = useState<Set<string>>(new Set())
 
   const fetchCameras = useCallback(async () => {
     try {
       const data = await camerasApi.list()
       setCameras(data)
+      // Clear connecting state for cameras that became Active
+      setConnectingIds(prev => {
+        const next = new Set(prev)
+        data.forEach(c => { if (c.status === CameraStatus.Active) next.delete(c.id) })
+        return next
+      })
       setError('')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -55,6 +62,7 @@ export default function AdminPage() {
     setPendingIds(s => new Set(s).add(id))
     try {
       await streamsApi.start(id)
+      setConnectingIds(s => new Set(s).add(id))
       await fetchCameras()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -65,6 +73,7 @@ export default function AdminPage() {
 
   const handleStop = async (id: string) => {
     setPendingIds(s => new Set(s).add(id))
+    setConnectingIds(s => { const n = new Set(s); n.delete(id); return n })
     try {
       await streamsApi.stop(id)
       await fetchCameras()
@@ -107,6 +116,7 @@ export default function AdminPage() {
               key={cam.id}
               camera={cam}
               pending={pendingIds.has(cam.id)}
+              connecting={connectingIds.has(cam.id)}
               onStart={() => void handleStart(cam.id)}
               onStop={() => void handleStop(cam.id)}
               onEdit={() => setModal({ type: 'edit', camera: cam })}

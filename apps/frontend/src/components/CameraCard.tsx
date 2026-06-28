@@ -17,6 +17,7 @@ const statusColor: Record<CameraStatus, string> = {
 interface CameraCardProps {
   camera: Camera
   pending?: boolean
+  connecting?: boolean
   onStart: () => void
   onStop: () => void
   onEdit: () => void
@@ -32,9 +33,19 @@ function Spinner() {
   )
 }
 
-export default function CameraCard({ camera, pending = false, onStart, onStop, onEdit, onDelete }: CameraCardProps) {
+export default function CameraCard({ camera, pending = false, connecting = false, onStart, onStop, onEdit, onDelete }: CameraCardProps) {
   const navigate = useNavigate()
   const isActive = camera.status === CameraStatus.Active
+  const showAsActive = isActive || connecting
+
+  const badgeColor = pending || connecting
+    ? 'bg-yellow-600'
+    : statusColor[camera.status]
+  const badgeLabel = pending
+    ? '처리중...'
+    : connecting
+    ? '연결 중'
+    : statusLabel[camera.status]
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 flex flex-col gap-3">
@@ -43,8 +54,9 @@ export default function CameraCard({ camera, pending = false, onStart, onStop, o
           <h3 className="font-semibold text-white">{camera.name}</h3>
           <p className="text-xs text-gray-500 font-mono mt-0.5 break-all">{camera.rtsp_url}</p>
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full text-white shrink-0 ml-2 ${pending ? 'bg-yellow-600' : statusColor[camera.status]}`}>
-          {pending ? '처리중...' : statusLabel[camera.status]}
+        <span className={`text-xs px-2 py-0.5 rounded-full text-white shrink-0 ml-2 flex items-center gap-1.5 ${badgeColor}`}>
+          {(pending || connecting) && <Spinner />}
+          {badgeLabel}
         </span>
       </div>
 
@@ -53,7 +65,7 @@ export default function CameraCard({ camera, pending = false, onStart, onStop, o
       )}
 
       <div className="flex gap-2 flex-wrap">
-        {isActive ? (
+        {showAsActive ? (
           <>
             <button
               onClick={() => navigate(`/viewer/${camera.id}`)}
@@ -64,7 +76,7 @@ export default function CameraCard({ camera, pending = false, onStart, onStop, o
             </button>
             <button
               onClick={onStop}
-              disabled={pending}
+              disabled={pending || connecting}
               className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-1.5"
             >
               {pending ? <><Spinner />중지 중</> : '중지'}
