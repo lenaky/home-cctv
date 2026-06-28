@@ -31,6 +31,10 @@
 | `GET /api/streams/:id/status` | ✅ status=2 + HLS URL 유지 | |
 | HLS 플레이리스트 생성 | ✅ seg00003.ts ~ seg00023.ts 생성 확인 | HEVC hvc1 카메라 실측 |
 | 브라우저 HLS 재생 | ✅ hls.js 재생 확인 | admin → viewer 이동 후 실시간 영상 출력 |
+| LL-HLS 재생 (keyframe 정렬) | ✅ 수정 후 정상 | seg_time_reached 조건 + pre-flush 적용 후 "오류" 없음 |
+| FPS / 비트레이트 표시 | ✅ 뷰어에서 확인 | ReadyCallback에서 avg_frame_rate 채움, FRAG_LOADED 실시간 비트레이트 |
+| YouTube Live-style 플레이어 | ✅ 뷰어에서 확인 | 커스텀 오버레이, LIVE 배지, 볼륨 슬라이더 |
+| 오디오 지원 코드 동작 확인 | ✅ 빌드+런타임 | setAudioStream/writeAudioPacket 정상 동작; 테스트 카메라 오디오 없음 (audio=none) |
 | 재연결 동작 (RTSP 끊김) | 미확인 | 의도적 끊김 테스트 미진행 |
 | fMP4 녹화 파일 생성 | 미확인 | recording_enabled=false (기본값) |
 | SQLite DB 파일 생성 | ✅ `~/.home-cctv/ingestion.db` 생성 확인 | |

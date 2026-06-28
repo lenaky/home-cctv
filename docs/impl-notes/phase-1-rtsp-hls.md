@@ -80,16 +80,40 @@ RTSP 수신 백그라운드 스레드가 `camera_repo_->updateStatus()` 호출, 
 
 ---
 
+### 8. LL-HLS keyframe 정렬 미흡으로 hls.js "오류" (수정됨)
+
+초기 구현에서 세그먼트 분할 기준이 시간 단위(`current_seg_duration_ >= cfg_.segment_duration`)였다. GOP 경계와 무관하게 분할되면 새 세그먼트 첫 part가 IDR 프레임으로 시작하지 않아 hls.js가 독립 재생 불가로 "오류"를 표시했다.
+
+또한 keyframe 직전 flush 없이 keyframe 패킷을 쓰면 keyframe이 현재 part 끝에 붙어 다음 part에서 `INDEPENDENT=YES`가 되어야 할 part가 non-independent로 표시됐다.
+
+**수정:**
+- 세그먼트 분할 조건: `(시간 초과 && is_key) || 2× 초과(하드 리밋)`
+- keyframe 도착 전 현재 part flush → keyframe이 새 part의 첫 프레임 → `INDEPENDENT=YES`
+- `EXT-X-TARGETDURATION`: 완료 세그먼트 중 `ceil(duration)` 최대값으로 동적 계산
+
+### 9. ReadyCallback 도입으로 오디오 초기화 타이밍 문제 해결 (수정됨)
+
+기존 `first_packet` 패턴에서 `avformat_write_header` 호출 전에 오디오 스트림을 추가할 수 없었다. 최초 패킷이 도달했을 때 이미 `write_header`가 실행됐거나 오디오 스트림 정보가 없었기 때문이다.
+
+**수정:** `ReadyCallback(video_st, audio_st)` 도입. RTSP 연결 직후, 패킷 루프 진입 전에 호출. `setAudioStream()` → `open()` 순서로 호출하면 `avformat_write_header` 시 오디오 트랙이 init.mp4에 포함된다.
+
+### 10. IPTIME C500G 카메라 오디오 없음 (확인됨)
+
+테스트 카메라(IPTIME C500G) 두 대 모두 RTSP 스트림에 오디오가 없음. `av_find_best_stream(AVMEDIA_TYPE_AUDIO)` 반환값 -1. 오디오 파이프라인 코드는 정상 동작하나 실제 오디오 스트림이 없으므로 `init.mp4`에 오디오 트랙 없음.
+
+---
+
 ## 미구현 / 스텁 처리된 항목
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
-| FPS 계산 | 미구현 | `StreamInfo::fps` 항상 0.0 |
+| FPS 계산 | 구현됨 | `ReadyCallback`에서 `avg_frame_rate`로 채움 |
+| 비트레이트 표시 | 구현됨 | 서버: `codecpar->bit_rate`, 클라이언트: `FRAG_LOADED` 실시간 |
+| 오디오 지원 | 구현됨 | 카메라에 오디오 스트림이 있을 경우 자동 포함 |
 | 스트림 이벤트 WebSocket 푸시 | 미구현 | 현재 로그만 출력 |
 | JWT 인증 미들웨어 | 미구현 | Phase 2 |
 | RTMP / WebRTC 수신 | 미구현 | Phase 3 |
 | fMP4 녹화 실제 검증 | 미검증 | 실제 RTSP 카메라 필요 |
-| HLS 재생 실제 검증 | 미검증 | 실제 RTSP 카메라 필요 |
 
 ---
 
