@@ -23,8 +23,12 @@ public:
                 std::string base_url, LlHlsConfig cfg = {});
     ~LlHlsWriter() override;
 
+    // Call setAudioStream BEFORE open() to include an audio track in init.mp4.
+    void setAudioStream(const AVStream* audio_stream);
+
     Result<void> open(const AVStream* source_stream) override;
     Result<void> writePacket(const AVPacket* pkt, const AVRational& src_time_base) override;
+    Result<void> writeAudioPacket(const AVPacket* pkt, const AVRational& src_time_base);
     Result<void> close() override;
     std::string  getPlaylistUrl() const override;
 
@@ -42,7 +46,7 @@ private:
         std::vector<Part> parts;
     };
 
-    void writeInitSegment(const AVStream* source_stream);
+    void writeInitSegment(const AVStream* video_stream);
     void openSegment(int seq);
     void flushPart(bool independent);
     void finalizeSegment();
@@ -54,13 +58,19 @@ private:
     std::string           base_url_;
     LlHlsConfig           cfg_;
 
-    AVFormatContext* ctx_        = nullptr;
-    AVStream*        out_stream_ = nullptr;
+    AVFormatContext*  ctx_              = nullptr;
+    AVStream*         out_video_stream_ = nullptr;
+    AVStream*         out_audio_stream_ = nullptr;
+    const AVStream*   pending_audio_    = nullptr;  // set before open()
 
-    // Timestamp state (same fixes as HlsSegmentWriter)
+    // Video timestamp state
     int64_t    last_dts_  = AV_NOPTS_VALUE;
     int64_t    next_dts_  = 0;
     AVRational src_tb_    = {1, 90000};
+
+    // Audio timestamp state
+    int64_t    audio_last_dts_ = AV_NOPTS_VALUE;
+    int64_t    audio_next_dts_ = 0;
 
     // Segment / part tracking
     int    current_seg_seq_      = 0;

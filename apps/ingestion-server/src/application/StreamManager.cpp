@@ -54,39 +54,44 @@ Result<domain::StreamInfo> StreamManager::startStream(const std::string& camera_
     stream->info.hls_playlist_url = stream->hls_writer->getPlaylistUrl();
     stream->info.started_at = std::chrono::system_clock::now();
 
-    auto* hls_ptr = stream->hls_writer.get();
-    auto* rec_ptr = stream->recording_writer.get();
-    auto* flag_ptr = &stream->first_packet;
+    auto* hls_ptr  = stream->hls_writer.get();
+    auto* rec_ptr  = stream->recording_writer.get();
     auto* info_ptr = &stream->info;
 
     stream->receiver = std::make_unique<adapters::RtspReceiver>(cam.rtsp_url, rtsp_opts);
 
     stream->receiver->start(
-        [this, camera_id, hls_ptr, rec_ptr, flag_ptr, info_ptr](AVPacket* pkt, const AVStream* src_st) {
-            bool expected = true;
-            if (flag_ptr->compare_exchange_strong(expected, false)) {
-                hls_ptr->open(src_st);
-                if (rec_ptr) rec_ptr->open(src_st);
+        // ReadyCallback: called once after RTSP connection, before any packets
+        [this, camera_id, hls_ptr, rec_ptr, info_ptr](const AVStream* video_st,
+                                                        const AVStream* audio_st) {
+            if (audio_st) hls_ptr->setAudioStream(audio_st);
+            hls_ptr->open(video_st);
+            if (rec_ptr) rec_ptr->open(video_st);
 
-                std::unique_lock wl(streams_mutex_);
-                info_ptr->status = domain::StreamStatus::Streaming;
-                info_ptr->codec_name = avcodec_get_name(src_st->codecpar->codec_id);
-                info_ptr->width = src_st->codecpar->width;
-                info_ptr->height = src_st->codecpar->height;
-                info_ptr->fps = av_q2d(src_st->avg_frame_rate);
-                info_ptr->bitrate = src_st->codecpar->bit_rate;
-                wl.unlock();
+            std::unique_lock wl(streams_mutex_);
+            info_ptr->status     = domain::StreamStatus::Streaming;
+            info_ptr->codec_name = avcodec_get_name(video_st->codecpar->codec_id);
+            info_ptr->width      = video_st->codecpar->width;
+            info_ptr->height     = video_st->codecpar->height;
+            info_ptr->fps        = av_q2d(video_st->avg_frame_rate);
+            info_ptr->bitrate    = video_st->codecpar->bit_rate;
+            wl.unlock();
 
-                camera_repo_->updateStatus(camera_id, domain::CameraStatus::Active);
-                event_publisher_->onStreamStarted(camera_id);
-            }
-
-            auto hls_res = hls_ptr->writePacket(pkt, src_st->time_base);
-            if (hls_res.is_err())
-                spdlog::error("HLS write error [{}]: {}", camera_id, hls_res.error());
-            if (rec_ptr) rec_ptr->writePacket(pkt, src_st->time_base);
+            camera_repo_->updateStatus(camera_id, domain::CameraStatus::Active);
+            event_publisher_->onStreamStarted(camera_id);
         },
-        [this, camera_id](const std::string& error) {
+        // PacketCallback: video + audio packets
+        [this, camera_id, hls_ptr, rec_ptr](AVPacket* pkt, const AVStream* src_st) {
+            if (src_st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+                auto hls_res = hls_ptr->writePacket(pkt, src_st->time_base);
+                if (hls_res.is_err())
+                    spdlog::error("HLS write error [{}]: {}", camera_id, hls_res.error());
+                if (rec_ptr) rec_ptr->writePacket(pkt, src_st->time_base);
+            } else if (src_st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+                hls_ptr->writeAudioPacket(pkt, src_st->time_base);
+            }
+        },
+        [camera_id, this](const std::string& error) {
             spdlog::warn("Stream error [{}]: {}", camera_id, error);
             camera_repo_->updateStatus(camera_id, domain::CameraStatus::Error, error);
             event_publisher_->onStreamError(camera_id, error);

@@ -12,14 +12,15 @@ RtspReceiver::RtspReceiver(std::string url, RtspOptions opts)
 
 RtspReceiver::~RtspReceiver() { stop(); }
 
-void RtspReceiver::start(PacketCallback on_packet, ErrorCallback on_error) {
+void RtspReceiver::start(ReadyCallback on_ready, PacketCallback on_packet, ErrorCallback on_error) {
     running_ = true;
     receive_thread_ = std::thread([this,
+                                    on_ready  = std::move(on_ready),
                                     on_packet = std::move(on_packet),
-                                    on_error = std::move(on_error)]() mutable {
+                                    on_error  = std::move(on_error)]() mutable {
         int attempts = 0;
         while (running_) {
-            receiveLoop(on_packet, on_error);
+            receiveLoop(on_ready, on_packet, on_error);
             if (!running_) break;
             ++attempts;
             if (attempts >= opts_.max_reconnect_attempts) {
@@ -74,12 +75,18 @@ bool RtspReceiver::openInput() {
         return false;
     }
 
-    auto* st = fmt_ctx_->streams[video_stream_idx_];
-    spdlog::info("RTSP connected: {} — codec={} {}x{}",
+    audio_stream_idx_ =
+        av_find_best_stream(fmt_ctx_, AVMEDIA_TYPE_AUDIO, -1, video_stream_idx_, nullptr, 0);
+
+    auto* vst = fmt_ctx_->streams[video_stream_idx_];
+    spdlog::info("RTSP connected: {} — video={} {}x{} audio={}",
                  url_,
-                 avcodec_get_name(st->codecpar->codec_id),
-                 st->codecpar->width,
-                 st->codecpar->height);
+                 avcodec_get_name(vst->codecpar->codec_id),
+                 vst->codecpar->width,
+                 vst->codecpar->height,
+                 audio_stream_idx_ >= 0
+                     ? avcodec_get_name(fmt_ctx_->streams[audio_stream_idx_]->codecpar->codec_id)
+                     : "none");
     return true;
 }
 
@@ -88,13 +95,22 @@ void RtspReceiver::closeInput() {
         avformat_close_input(&fmt_ctx_);
         fmt_ctx_ = nullptr;
     }
+    video_stream_idx_ = -1;
+    audio_stream_idx_ = -1;
 }
 
-void RtspReceiver::receiveLoop(PacketCallback on_packet, ErrorCallback on_error) {
+void RtspReceiver::receiveLoop(ReadyCallback on_ready, PacketCallback on_packet,
+                               ErrorCallback on_error) {
     if (!openInput()) {
         on_error("Failed to open RTSP stream");
         return;
     }
+
+    // Notify caller of available streams before any packets
+    const AVStream* audio_st = (audio_stream_idx_ >= 0)
+                                   ? fmt_ctx_->streams[audio_stream_idx_]
+                                   : nullptr;
+    on_ready(fmt_ctx_->streams[video_stream_idx_], audio_st);
 
     AVPacket* pkt = av_packet_alloc();
 
@@ -115,9 +131,10 @@ void RtspReceiver::receiveLoop(PacketCallback on_packet, ErrorCallback on_error)
             break;
         }
 
-        if (pkt->stream_index == video_stream_idx_) {
+        if (pkt->stream_index == video_stream_idx_)
             on_packet(pkt, fmt_ctx_->streams[video_stream_idx_]);
-        }
+        else if (pkt->stream_index == audio_stream_idx_)
+            on_packet(pkt, fmt_ctx_->streams[audio_stream_idx_]);
 
         av_packet_unref(pkt);
     }

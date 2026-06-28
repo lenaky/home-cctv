@@ -40,7 +40,6 @@ private:
         std::unique_ptr<adapters::LlHlsWriter> hls_writer;
         std::unique_ptr<adapters::FMp4Writer> recording_writer;
         domain::StreamInfo info;
-        std::atomic<bool> first_packet{true};
     };
 
     std::shared_ptr<domain::ports::ICameraRepository> camera_repo_;
