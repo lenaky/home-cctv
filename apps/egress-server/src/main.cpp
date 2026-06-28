@@ -75,7 +75,7 @@ static void servePlaylistBlocking(const std::filesystem::path& hls_root,
                                    httplib::Response& res) {
     auto playlist_path = hls_root / cam_id / "index.m3u8";
     const auto deadline      = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    const auto poll_interval = std::chrono::milliseconds(50);
+    const auto poll_interval = std::chrono::milliseconds(10);
 
     std::string content;
     while (true) {
