@@ -52,6 +52,7 @@ export default function HlsPlayer({ src, className = '', onBitrateUpdate }: HlsP
   const [showVolume, setShowVolume] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [showControls, setShowControls] = useState(true)
+  const [catchingUp, setCatchingUp] = useState(false)
 
   // Auto-hide controls after 3s of inactivity
   const resetHideTimer = useCallback(() => {
@@ -74,17 +75,19 @@ export default function HlsPlayer({ src, className = '', onBitrateUpdate }: HlsP
 
     const onPlay = () => setPlaying(true)
     const onPause = () => setPlaying(false)
+    const onRateChange = () => setCatchingUp(video.playbackRate > 1.01)
     video.addEventListener('play', onPlay)
     video.addEventListener('pause', onPause)
+    video.addEventListener('ratechange', onRateChange)
 
     if (Hls.isSupported()) {
       const hls = new Hls({
         lowLatencyMode: true,
-        liveSyncDurationCount: 3,        // 3 × PART-TARGET(0.2s) = 0.6s, matches PART-HOLD-BACK
-        liveMaxLatencyDurationCount: 15, // 15 × 0.2s = 3s max before catch-up
+        liveSyncDurationCount: 3,         // target: 3 × 0.2s = 0.6s behind live
+        liveMaxLatencyDurationCount: 10,  // trigger catch-up when >2s behind live
+        maxLiveSyncPlaybackRate: 1.5,     // catch up at 1.5x until within target latency
         liveDurationInfinity: true,
         enableWorker: true,
-        startPosition: -1,               // start as close to live edge as possible
       })
       hlsRef.current = hls
       hls.loadSource(src)
@@ -125,6 +128,7 @@ export default function HlsPlayer({ src, className = '', onBitrateUpdate }: HlsP
     return () => {
       video.removeEventListener('play', onPlay)
       video.removeEventListener('pause', onPause)
+      video.removeEventListener('ratechange', onRateChange)
       if (bitrateIntervalRef.current) {
         clearInterval(bitrateIntervalRef.current)
         bitrateIntervalRef.current = null
@@ -245,15 +249,25 @@ export default function HlsPlayer({ src, className = '', onBitrateUpdate }: HlsP
             </div>
           </div>
 
-          {/* LIVE badge */}
-          <button
-            onClick={jumpToLive}
-            className="flex items-center gap-1.5 flex-shrink-0 group"
-            title="라이브로 이동"
-          >
-            <span className="w-2 h-2 rounded-full bg-red-500 group-hover:bg-red-400" />
-            <span className="text-white text-sm font-bold tracking-wide">LIVE</span>
-          </button>
+          {/* LIVE / catch-up badge */}
+          {catchingUp ? (
+            <span className="flex items-center gap-1.5 flex-shrink-0">
+              <svg className="animate-spin h-3 w-3 text-yellow-400" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+              <span className="text-yellow-400 text-sm font-bold tracking-wide">따라잡는 중</span>
+            </span>
+          ) : (
+            <button
+              onClick={jumpToLive}
+              className="flex items-center gap-1.5 flex-shrink-0 group"
+              title="라이브로 이동"
+            >
+              <span className="w-2 h-2 rounded-full bg-red-500 group-hover:bg-red-400" />
+              <span className="text-white text-sm font-bold tracking-wide">LIVE</span>
+            </button>
+          )}
 
           <div className="flex-1" />
 
