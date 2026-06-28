@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import type { Camera, StreamInfo } from '../types'
 import { StreamStatus } from '../types'
@@ -6,12 +6,19 @@ import { camerasApi } from '../api/cameras'
 import { streamsApi } from '../api/streams'
 import HlsPlayer from '../components/HlsPlayer'
 
+function formatBitrate(bps: number): string {
+  if (bps <= 0) return '-'
+  if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} Mbps`
+  return `${(bps / 1_000).toFixed(0)} Kbps`
+}
+
 export default function ViewerPage() {
   const { cameraId } = useParams<{ cameraId: string }>()
   const navigate = useNavigate()
   const [camera, setCamera] = useState<Camera | null>(null)
   const [streamInfo, setStreamInfo] = useState<StreamInfo | null>(null)
   const [error, setError] = useState('')
+  const [liveBitrate, setLiveBitrate] = useState(0)
 
   useEffect(() => {
     if (!cameraId) return
@@ -34,8 +41,22 @@ export default function ViewerPage() {
     return () => clearInterval(id)
   }, [cameraId])
 
+  const handleBitrateUpdate = useCallback((bps: number) => setLiveBitrate(bps), [])
+
   const isStreaming = streamInfo?.status === StreamStatus.Streaming
   const hlsSrc = isStreaming ? streamInfo.hls_playlist_url : ''
+
+  // Use live bitrate from hls.js if available, fall back to server-reported
+  const displayBitrate = liveBitrate > 0 ? liveBitrate : (streamInfo?.bitrate ?? 0)
+
+  const stats = isStreaming && streamInfo
+    ? [
+        { label: '코덱', value: streamInfo.codec_name || '-' },
+        { label: '해상도', value: streamInfo.width ? `${streamInfo.width}×${streamInfo.height}` : '-' },
+        { label: 'FPS', value: streamInfo.fps > 0 ? streamInfo.fps.toFixed(1) : '-' },
+        { label: '비트레이트', value: formatBitrate(displayBitrate) },
+      ]
+    : []
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -64,7 +85,11 @@ export default function ViewerPage() {
 
       <div className="bg-black rounded-xl overflow-hidden aspect-video">
         {isStreaming ? (
-          <HlsPlayer src={hlsSrc} className="h-full" />
+          <HlsPlayer
+            src={hlsSrc}
+            className="w-full h-full"
+            onBitrateUpdate={handleBitrateUpdate}
+          />
         ) : (
           <div className="flex items-center justify-center h-full text-gray-600">
             <p>스트림을 시작하려면 카메라 관리 페이지에서 시작하세요</p>
@@ -72,13 +97,9 @@ export default function ViewerPage() {
         )}
       </div>
 
-      {streamInfo && isStreaming && (
-        <div className="mt-4 grid grid-cols-3 gap-3">
-          {[
-            ['코덱', streamInfo.codec_name],
-            ['해상도', streamInfo.width ? `${streamInfo.width}×${streamInfo.height}` : '-'],
-            ['FPS', streamInfo.fps ? streamInfo.fps.toFixed(1) : '-'],
-          ].map(([label, value]) => (
+      {stats.length > 0 && (
+        <div className="mt-4 grid grid-cols-4 gap-3">
+          {stats.map(({ label, value }) => (
             <div key={label} className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-center">
               <p className="text-xs text-gray-500">{label}</p>
               <p className="text-sm font-mono font-medium text-white">{value}</p>
