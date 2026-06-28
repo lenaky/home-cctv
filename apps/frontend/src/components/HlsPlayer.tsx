@@ -26,6 +26,16 @@ export default function HlsPlayer({ src, className = '' }: HlsPlayerProps) {
       hls.loadSource(src)
       hls.attachMedia(video)
       hls.on(Hls.Events.MANIFEST_PARSED, () => void video.play())
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (!data.fatal) return
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError()
+        } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls.startLoad()
+        } else {
+          hls.destroy()
+        }
+      })
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Safari native HLS
       video.src = src

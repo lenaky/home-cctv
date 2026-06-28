@@ -76,15 +76,22 @@ Result<void> LlHlsWriter::writePacket(const AVPacket* pkt, const AVRational& src
 
     bool is_key = (pkt->flags & AV_PKT_FLAG_KEY) != 0;
 
-    // Start new segment on time boundary (prefer keyframe, fall back to time-only)
-    // Time-based split is used because some cameras have long GOPs or don't set AV_PKT_FLAG_KEY
-    bool seg_time_reached = current_seg_duration_ >= cfg_.segment_duration;
+    // Split segment on keyframe boundary; hard limit at 2× segment_duration to avoid
+    // infinitely long segments on cameras with long GOPs.
+    bool seg_time_reached = (current_seg_duration_ >= cfg_.segment_duration && is_key) ||
+                             (current_seg_duration_ >= cfg_.segment_duration * 2.0);
     if (seg_time_reached) {
         if (current_part_duration_ > 0)
             flushPart(next_part_independent_);
         finalizeSegment();
         openSegment(++current_seg_seq_);
         next_part_independent_ = is_key;
+        current_part_duration_ = 0.0;
+    } else if (is_key && current_part_duration_ > 0) {
+        // Flush buffered frames BEFORE writing the keyframe so the keyframe becomes
+        // the first sample of the next part (enabling INDEPENDENT=YES on that part).
+        flushPart(next_part_independent_);
+        next_part_independent_ = true;
         current_part_duration_ = 0.0;
     }
 
@@ -102,11 +109,8 @@ Result<void> LlHlsWriter::writePacket(const AVPacket* pkt, const AVRational& src
     current_part_duration_   += pkt_sec;
     current_seg_duration_    += pkt_sec;
 
-    // Flush a part when duration threshold reached or keyframe (for INDEPENDENT=YES marking)
-    bool flush_part = (current_part_duration_ >= cfg_.part_duration) ||
-                      (is_key && current_part_duration_ > 0 && !seg_time_reached);
-
-    if (flush_part) {
+    // Flush a part when duration threshold is reached
+    if (current_part_duration_ >= cfg_.part_duration) {
         flushPart(next_part_independent_);
         next_part_independent_ = false;
         current_part_duration_ = 0.0;
@@ -228,8 +232,11 @@ void LlHlsWriter::writePlaylist(bool end_of_stream) {
     m3u8.reserve(4096);
     m3u8 += "#EXTM3U\n";
     m3u8 += "#EXT-X-VERSION:9\n";
-    m3u8 += std::format("#EXT-X-TARGETDURATION:{}\n",
-                        static_cast<int>(std::ceil(cfg_.segment_duration)));
+    // TARGETDURATION must be >= every EXTINF in the playlist; compute from actuals.
+    int target_dur = static_cast<int>(std::ceil(cfg_.segment_duration));
+    for (const auto& seg : completed_segs_)
+        target_dur = std::max(target_dur, static_cast<int>(std::ceil(seg.duration)));
+    m3u8 += std::format("#EXT-X-TARGETDURATION:{}\n", target_dur);
     m3u8 += std::format("#EXT-X-PART-INF:PART-TARGET={:.3f}\n", cfg_.part_duration);
     m3u8 += std::format(
         "#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK={:.3f}\n",
