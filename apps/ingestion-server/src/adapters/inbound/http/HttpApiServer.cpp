@@ -129,7 +129,7 @@ void HttpApiServer::setupRoutes() {
 
             auto result = camera_svc_->registerCamera(cmd);
             if (result.is_err()) {
-                res.status = 400;
+                res.status = result.error().find("already registered") != std::string::npos ? 409 : 400;
                 res.set_content(json{{"error", result.error()}}.dump(), "application/json");
                 return;
             }
