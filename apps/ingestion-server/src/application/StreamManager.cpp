@@ -20,15 +20,20 @@ StreamManager::StreamManager(std::shared_ptr<domain::ports::ICameraRepository> c
 StreamManager::~StreamManager() { stopAll(); }
 
 Result<domain::StreamInfo> StreamManager::startStream(const std::string& camera_id) {
+    auto cam_result = camera_repo_->findById(camera_id);
+    if (cam_result.is_err()) return Result<domain::StreamInfo>::Err(cam_result.error());
+    auto cam = cam_result.value();
+
     {
         std::shared_lock rl(streams_mutex_);
         if (streams_.count(camera_id))
             return Result<domain::StreamInfo>::Err("Stream already active: " + camera_id);
+        for (const auto& [id, s] : streams_) {
+            if (s->rtsp_url == cam.rtsp_url)
+                return Result<domain::StreamInfo>::Err(
+                    "Another camera is already streaming this RTSP URL: " + cam.rtsp_url);
+        }
     }
-
-    auto cam_result = camera_repo_->findById(camera_id);
-    if (cam_result.is_err()) return Result<domain::StreamInfo>::Err(cam_result.error());
-    auto cam = cam_result.value();
 
     adapters::RtspOptions rtsp_opts;
     rtsp_opts.transport = (cam.settings.transport == domain::RtspTransport::Udp) ? "udp" : "tcp";
@@ -49,6 +54,7 @@ Result<domain::StreamInfo> StreamManager::startStream(const std::string& camera_
         stream->recording_writer = std::make_unique<adapters::FMp4Writer>(rec_root, camera_id);
     }
 
+    stream->rtsp_url = cam.rtsp_url;
     stream->info.camera_id = camera_id;
     stream->info.status = domain::StreamStatus::Connecting;
     stream->info.hls_playlist_url = stream->hls_writer->getPlaylistUrl();

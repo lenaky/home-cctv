@@ -40,6 +40,7 @@ private:
         std::unique_ptr<adapters::LlHlsWriter> hls_writer;
         std::unique_ptr<adapters::FMp4Writer> recording_writer;
         domain::StreamInfo info;
+        std::string rtsp_url;
     };
 
     std::shared_ptr<domain::ports::ICameraRepository> camera_repo_;

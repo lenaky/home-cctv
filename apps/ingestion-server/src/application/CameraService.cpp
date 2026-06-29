@@ -28,14 +28,6 @@ Result<domain::Camera> CameraService::registerCamera(const domain::ports::Regist
     if (cmd.name.empty()) return Result<domain::Camera>::Err("Camera name is required");
     if (cmd.rtsp_url.empty()) return Result<domain::Camera>::Err("RTSP URL is required");
 
-    auto existing = repo_->findAll();
-    if (existing.is_ok()) {
-        for (const auto& cam : existing.value()) {
-            if (cam.rtsp_url == cmd.rtsp_url)
-                return Result<domain::Camera>::Err("A camera with this RTSP URL is already registered: " + cmd.rtsp_url);
-        }
-    }
-
     auto now = std::chrono::system_clock::now();
     domain::Camera cam;
     cam.id = generateId();
