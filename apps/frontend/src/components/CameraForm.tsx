@@ -58,30 +58,16 @@ export default function CameraForm({ initial, onSubmit, onCancel }: CameraFormPr
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">전송 방식</label>
-          <select
-            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-            value={settings.transport}
-            onChange={e => setSettings(s => ({ ...s, transport: Number(e.target.value) }))}
-          >
-            <option value={RtspTransport.Tcp}>TCP (권장)</option>
-            <option value={RtspTransport.Udp}>UDP</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">세그먼트 길이 (초)</label>
-          <input
-            type="number"
-            min={1}
-            max={10}
-            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-            value={settings.segment_duration_sec}
-            onChange={e => setSettings(s => ({ ...s, segment_duration_sec: Number(e.target.value) }))}
-          />
-        </div>
+      <div>
+        <label className="block text-sm text-gray-400 mb-1">전송 방식</label>
+        <select
+          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+          value={settings.transport}
+          onChange={e => setSettings(s => ({ ...s, transport: Number(e.target.value) }))}
+        >
+          <option value={RtspTransport.Tcp}>TCP (권장)</option>
+          <option value={RtspTransport.Udp}>UDP</option>
+        </select>
       </div>
 
       <div className="flex items-center gap-2">

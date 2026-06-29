@@ -83,9 +83,7 @@ export default function HlsPlayer({ src, className = '', onBitrateUpdate }: HlsP
     if (Hls.isSupported()) {
       const hls = new Hls({
         lowLatencyMode: true,
-        liveSyncDurationCount: 3,         // target: 3 × 0.2s = 0.6s behind live
-        liveMaxLatencyDurationCount: 10,  // trigger catch-up when >2s behind live
-        maxLiveSyncPlaybackRate: 1.5,     // catch up at 1.5x until within target latency
+        liveSyncDurationCount: 3,
         liveDurationInfinity: true,
         enableWorker: true,
       })
@@ -99,6 +97,23 @@ export default function HlsPlayer({ src, className = '', onBitrateUpdate }: HlsP
         else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad()
         else hls.destroy()
       })
+
+      // Manual live-edge correction: hls.js config alone can't reliably keep
+      // the player near live edge with GOP=4s. Directly seek when too far behind.
+      const liveCorrectInterval = setInterval(() => {
+        if (video.paused || !video.buffered.length) return
+        const buffEnd = video.buffered.end(video.buffered.length - 1)
+        const behind = buffEnd - video.currentTime
+        if (behind > 3) {
+          const target = buffEnd - 1.5
+          if (target > video.currentTime) {
+            video.currentTime = target
+            setCatchingUp(false)
+          }
+        }
+      }, 1000)
+      // store for cleanup
+      ;(hls as unknown as Record<string, unknown>).__liveCorrect = liveCorrectInterval
       if (onBitrateUpdate) {
         let bpsAccum = 0
         let fragCount = 0
@@ -133,7 +148,12 @@ export default function HlsPlayer({ src, className = '', onBitrateUpdate }: HlsP
         clearInterval(bitrateIntervalRef.current)
         bitrateIntervalRef.current = null
       }
-      hlsRef.current?.destroy()
+      const hls = hlsRef.current
+      if (hls) {
+        const id = (hls as unknown as Record<string, unknown>).__liveCorrect as ReturnType<typeof setInterval> | undefined
+        if (id !== undefined) clearInterval(id)
+        hls.destroy()
+      }
       hlsRef.current = null
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
     }
