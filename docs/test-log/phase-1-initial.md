@@ -1,7 +1,8 @@
-# 테스트 로그 — Phase 1 초기 구현
+# 테스트 로그 — Phase 1 초기 구현 + 실사용 버그 수정
 
-**날짜:** 2026-06-29  
-**테스트 환경:** macOS (Apple Silicon, arm64), Apple Clang 17, Homebrew 패키지
+**날짜:** 2026-06-29 (초기) / 2026-06-30 ~ 2026-07-01 (실카메라 버그 수정)  
+**테스트 환경:** macOS (Apple Silicon, arm64), Apple Clang 17, Homebrew 패키지  
+**테스트 카메라:** Jay-Bed (HEVC 2880×1620, 192.168.45.199), Living-Room (HEVC 2880×1620, 192.168.45.72), Living-Room 2 (IPTIME C500G)
 
 ---
 
@@ -35,7 +36,7 @@
 | FPS / 비트레이트 표시 | ✅ 뷰어에서 확인 | ReadyCallback에서 avg_frame_rate 채움, FRAG_LOADED 실시간 비트레이트 |
 | YouTube Live-style 플레이어 | ✅ 뷰어에서 확인 | 커스텀 오버레이, LIVE 배지, 볼륨 슬라이더 |
 | 오디오 지원 코드 동작 확인 | ✅ 빌드+런타임 | setAudioStream/writeAudioPacket 정상 동작; 테스트 카메라 오디오 없음 (audio=none) |
-| 재연결 동작 (RTSP 끊김) | 미확인 | 의도적 끊김 테스트 미진행 |
+| 재연결 동작 (RTSP 끊김) | ✅ 동작 확인 | max reconnect 후 zombie 버그 → 수정됨 (아래 참조) |
 | fMP4 녹화 파일 생성 | 미확인 | recording_enabled=false (기본값) |
 | SQLite DB 파일 생성 | ✅ `~/.home-cctv/ingestion.db` 생성 확인 | |
 
@@ -54,6 +55,43 @@
 | 7 | `CameraStatus` enum 불일치 | C++ `enum class` 기본값 0-based, TypeScript/proto는 1-based | C++ enum에 명시적 값 지정: `Inactive=1, Active=2, Error=3`, `StreamStatus`도 동일 처리 |
 | 8 | HEVC timestamp 미설정 → 서버 크래시 | 실제 ONVIF HEVC 카메라에서 PTS/DTS=AV_NOPTS_VALUE 패킷 수신 시 `av_interleaved_write_frame` 내부 상태 오염 후 크래시 | `HlsSegmentWriter::writePacket`에서 pts/dts 크로스-보정 + 합성 카운터 추가; HEVC 코덱 태그 `hvc1` 설정 |
 | 9 | viewer → admin 뒤로 가기 시 Internal Server Error | RTSP 백그라운드 스레드의 `updateStatus()` + HTTP 핸들러의 `findAll()`이 mutex 없이 동일 `sqlite3*` 공유 | `CameraRepository`에 `std::mutex db_mutex_` 추가, 모든 메서드에 `lock_guard` 적용 |
+
+---
+
+---
+
+## 실카메라 테스트 — 버그 수정 결과 (2026-06-30 ~ 07-01)
+
+### HEVC 파라미터셋 패킷 trun 손상 버그
+
+| 테스트 | 결과 | 비고 |
+|--------|------|------|
+| 수정 전 세그먼트 ffprobe: IDR duration | ❌ 0.128s (11520 ticks) | 정상=0.050s (4500 ticks) |
+| 수정 전 세그먼트: IDR 이후 패킷 duration | ❌ 0.000011s (1 tick) / 0.020s | 파라미터셋 DTS 충돌 흔적 |
+| 수정 후 세그먼트 IDR duration | ✅ 0.057s (~5130 ticks) | 정상 범위 |
+| 수정 후 모든 패킷 duration | ✅ 0.040–0.053s | 전부 정상 프레임 간격 |
+| 수정 후 `INDEPENDENT=YES` 파트 | ✅ 각 세그먼트 첫 파트에 부착 | 수정 전에는 누락됨 |
+| 수정 후 세그먼트 파일 크기 | ✅ 178–182KB (기존 174–183KB와 유사) | 1차 시도(첫 NAL만 체크)에서 52KB로 축소됨 → VCL 전체 스캔으로 교정 |
+| Jay-Bed 영상 재생 안정성 | ✅ 검은 화면/역재생 없음 | 브라우저에서 직접 확인 필요 |
+
+**1차 시도 실패 케이스:** 첫 NAL 타입만 체크하는 방식 → VPS+SPS+PPS+IDR 합산 패킷의 첫 NAL이 VPS(32)이므로 IDR 전체가 필터링됨. 세그먼트에 K__ 플래그 없음, 파일 크기 1/3 수준으로 축소. 모든 NAL 스캔(VCL 포함 여부) 방식으로 재수정.
+
+### Zombie 스트림 재시작 버그
+
+| 테스트 | 결과 | 비고 |
+|--------|------|------|
+| Max reconnect 후 `startStream` API 호출 | ✅ 자동 정리 후 재시작 성공 | 수정 전: "Stream already active" 오류 |
+| 정상 스트리밍 중 `startStream` 재호출 | ✅ "Stream already active" 반환 | 의도된 동작 유지 |
+| Max reconnect 후 `GET /status` | ✅ status=4 (Error) 반환 | 수정 전: status=3 (Streaming, 오해 소지) |
+
+### LL-HLS 딜레이 튜닝
+
+| 테스트 | 결과 | 비고 |
+|--------|------|------|
+| hls.js 기본 설정 딜레이 | 측정 없음 | 추정 10–15s |
+| setInterval 라이브엣지 강제 seek 후 딜레이 | ✅ ~3s | buffEnd - currentTime > 3s 시 seek |
+| Living-Room 카메라 딜레이 | ✅ ~3s | |
+| Jay-Bed 카메라 딜레이 | 미확인 | 재생 안정화 후 측정 필요 |
 
 ---
 

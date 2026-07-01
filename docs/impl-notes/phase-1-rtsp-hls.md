@@ -1,6 +1,6 @@
 # 구현 노트 — Phase 1 (RTSP Ingestion + HLS Egress + Admin UI)
 
-**작업일:** 2026-06-28 ~ 2026-06-29  
+**작업일:** 2026-06-28 ~ 2026-07-01  
 **구현 범위:** ingestion-server, egress-server, frontend scaffold
 
 ---
@@ -97,7 +97,79 @@ RTSP 수신 백그라운드 스레드가 `camera_repo_->updateStatus()` 호출, 
 
 **수정:** `ReadyCallback(video_st, audio_st)` 도입. RTSP 연결 직후, 패킷 루프 진입 전에 호출. `setAudioStream()` → `open()` 순서로 호출하면 `avformat_write_header` 시 오디오 트랙이 init.mp4에 포함된다.
 
-### 10. IPTIME C500G 카메라 오디오 없음 (확인됨)
+### 10. Jay-Bed 카메라 오디오 (pcm_alaw) — MP4 컨테이너 불지원 (확인됨)
+
+Jay-Bed 카메라(192.168.45.199)는 RTSP에 `pcm_alaw` 오디오를 포함해 보낸다. `setAudioStream()`에서 지원 코덱 화이트리스트(AAC/MP3/AC3/Opus)를 체크하고 경고 후 스킵. `init.mp4`에 오디오 트랙 없음.
+
+### 11. IPTIME C500G 카메라 오디오 없음 (확인됨)
+
+테스트 카메라(IPTIME C500G) 두 대 모두 RTSP 스트림에 오디오가 없음. `av_find_best_stream(AVMEDIA_TYPE_AUDIO)` 반환값 -1.
+
+---
+
+## 실사용 카메라 테스트 중 발견된 버그 (2026-06-30 ~ 07-01)
+
+### 12. HEVC 카메라의 in-band 파라미터셋 패킷 → fMP4 trun 손상 (수정됨)
+
+**증상:** Jay-Bed 카메라(HEVC, 2880×1620, 20fps, GOP≈4s) 영상이 재생 중 검은 화면 → 2초 뒤로 이동 → 10초 전 영상 출력을 반복. Living-Room 카메라(동일 모델)는 정상.
+
+**진단 과정:**
+- ffprobe로 현재 재생 중인 세그먼트 분석: IDR 프레임 duration=11520 ticks(0.128s, 정상=4500 ticks=0.05s), 이후 duration=1 tick짜리 미세 패킷 2개 발견
+- 정상 카메라와 비교: Jay-Bed만 IDR 이후 size=942B, size=534B의 소형 패킷 존재
+- 이 소형 패킷들이 IDR과 거의 같은 DTS를 가져 DTS 충돌 보정 코드(`last_dts_ + 1`)가 트리거
+- fMP4 trun의 sample_duration은 muxer가 `next_dts - cur_dts`로 계산하므로, 1 tick 보정된 패킷들 때문에 IDR 이전 패킷이 수천 tick의 잘못된 duration을 갖게 됨
+- MSE(Media Source Extensions)가 이 잘못된 timeline을 받아 재생 위치를 역방향으로 보정 → 검은 화면 / 역재생
+
+**왜 최초에 놓쳤나:**
+- HEVC 스펙상 VPS/SPS/PPS는 `AV_PKT_FLAG_KEY`가 설정된 별도 AVPacket으로 올 수 있으나, 테스트 카메라(IPTIME C500G)는 이렇게 하지 않았다. Jay-Bed 카메라(다른 제조사)만 GOP마다 또는 주기적으로 파라미터셋을 별도 패킷으로 주입.
+- 초기 구현 시 단일 카메라로만 테스트했고, HEVC 파라미터셋 in-band 전송 패턴이 카메라마다 다르다는 점을 고려하지 않음.
+
+**왜 애매했나:**
+- 처음에는 IDR 직전에 파라미터셋이 오는 줄 알았으나, 실제로는 IDR 직후 또는 GOP 중간에도 옴 (타이밍이 불규칙).
+- "첫 번째 NAL 타입만 보고 필터" 접근을 먼저 시도했으나, 일부 카메라는 VPS+SPS+PPS+IDR을 하나의 큰 AVPacket에 담아 보냄 → 첫 NAL이 VPS(32)이면 IDR까지 통째로 드롭되는 결과 초래. 실제로 이 잘못된 버전을 빌드하고 세그먼트를 확인하니 모든 세그먼트에 K__ 플래그가 사라지고 파일 크기가 정상의 1/3 수준으로 줄었음.
+- HEVC NAL type 범위: VCL(영상 데이터)은 0–21, 비VCL(메타데이터)은 32–63. 패킷 내 모든 NAL을 스캔해서 VCL이 하나라도 있으면 통과, 없으면 드롭하는 방식으로 최종 수정.
+
+**수정:** `LlHlsWriter::writePacket`에 `hevcFirstVclNalType()` / `h264FirstVclNalType()` 스캐너 추가 (annexB start code 및 HVCC length-prefix 양쪽 지원). VCL NAL 없는 패킷(파라미터셋 전용) 드롭. HEVC `is_key`는 첫 VCL NAL이 IDR_W_RADL(19) 또는 IDR_N_LP(20)일 때만 true.
+
+**애매하게 남은 점:** annexB 스캐너에서 emulation prevention byte(0x000003) 처리 미구현. NAL 데이터 내부에 우연히 0x000001 패턴이 있으면 false positive 발생 가능. 파라미터셋-전용 패킷 필터링 용도로는 "충분히 정확"하지만, 엄밀한 NAL 파서가 아님. 향후 HEVC BSF(bitstream filter) 활용 검토 가능.
+
+### 13. StreamManager — max reconnect 후 zombie 스트림 → 재시작 불가 (수정됨)
+
+**증상:** RTSP 연결이 5회 시도 후 모두 실패하면 "Max reconnect attempts reached" 에러가 뜨고, 이후 UI에서 스트림 시작을 누르면 아무 반응 없이 실패.
+
+**원인:**
+- `RtspReceiver::start()`는 max reconnect 도달 시 `on_error()`를 호출하고 스레드를 종료하지만, `streams_` 맵에서 해당 엔트리를 제거하지 않음.
+- `StreamManager::startStream()`은 `streams_.count(camera_id)` 체크로 "Stream already active" 오류를 반환 → 재시작 불가.
+- `StreamInfo::status`는 `ReadyCallback`에서 Streaming(3)으로 설정된 채로 유지 — 에러 콜백이 camera_repo 상태는 업데이트했으나 `info_ptr->status`는 건드리지 않았음.
+
+**왜 최초에 놓쳤나:**
+- 초기 구현 시 재연결 로직을 "RTSP 끊김 시 자동 복구"로만 설계했고, "복구 불가 상태"에 빠진 스트림을 어떻게 처리할지 정의하지 않음.
+- 사용자가 명시적으로 `stopStream` → `startStream`을 해야 한다는 것을 당연히 여겼지만, UI에서 이미 "에러" 상태처럼 보이는데 stop 버튼이 활성화되지 않을 수 있음.
+
+**수정:**
+1. 에러 콜백에서 `info_ptr->status = StreamStatus::Error` 설정
+2. `startStream`에서 기존 스트림이 Error 상태이면 `stopStream()`으로 자동 정리 후 재시작
+3. 정상 스트리밍 중인 스트림(Streaming 상태)은 여전히 "Stream already active" 반환
+
+**주의사항:** `stopStream` 내부에서 `receiver->stop()`이 스레드를 join하는데, max reconnect 후 스레드는 이미 종료된 상태이므로 join은 즉시 반환. 데드락 없음. 단, `info_ptr`는 `ActiveStream::info`를 가리키는 포인터이며 `stopStream`이 `ActiveStream`을 소멸시키기 전에 스레드가 join 완료된다는 점에 의존함 — 현재 구조에서는 안전.
+
+### 14. LL-HLS 딜레이 — hls.js 자동 라이브엣지 추적 한계 (수정됨)
+
+**증상:** GOP=4s인 카메라에서 hls.js 기본 설정으로 재생하면 실제 라이브 대비 10~15초 지연.
+
+**원인:** hls.js의 `liveSyncDurationCount` 기본값이 3 세그먼트 = 12초 지연. LL-HLS 모드(`lowLatencyMode: true`)로도 `liveSyncDurationCount` 자동 조정이 GOP가 긴 경우 충분히 공격적이지 않음.
+
+**수정:** `setInterval` 1초 주기로 `buffEnd - currentTime`이 3초 초과 시 `buffEnd - 1.5s`로 강제 seek. hls.js 설정은 `lowLatencyMode: true, liveSyncDurationCount: 3, liveDurationInfinity: true`. 실측 딜레이 ~3s.
+
+**왜 애매했나:** LL-HLS 스펙 자체는 저지연을 보장하지 않음 — 클라이언트 플레이어의 버퍼링 전략이 핵심. hls.js의 라이브엣지 동작은 GOP 크기, 세그먼트 수, `liveSyncDurationCount` 상호작용이 복잡해서 수식으로 예측하기 어렵고 실측 후 조정이 필요.
+
+### 15. 중복 RTSP URL 등록 / 시작 정책 (수정됨)
+
+**원래 잘못된 수정:** `CameraService::registerCamera`에서 기존 카메라 목록 전체를 뒤져 같은 RTSP URL이면 등록 자체를 거부했음.
+
+**올바른 정책:** 같은 URL이라도 카메라 이름이 다르면 별개 레코드로 등록 가능(예: "Jay-Bed main", "Jay-Bed sub"). 단, 동시에 두 카메라가 같은 RTSP URL을 스트리밍하는 것은 불가(한 URL에 하나의 RTSP 세션만 유효).
+
+**수정:** `CameraService::registerCamera`에서 URL 중복 체크 제거. `StreamManager::startStream`에서 이미 스트리밍 중인 카메라의 rtsp_url과 비교해 중복 시 시작 거부. `ActiveStream` 구조체에 `rtsp_url` 필드 추가.
 
 테스트 카메라(IPTIME C500G) 두 대 모두 RTSP 스트림에 오디오가 없음. `av_find_best_stream(AVMEDIA_TYPE_AUDIO)` 반환값 -1. 오디오 파이프라인 코드는 정상 동작하나 실제 오디오 스트림이 없으므로 `init.mp4`에 오디오 트랙 없음.
 
