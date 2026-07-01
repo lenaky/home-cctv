@@ -93,8 +93,19 @@
 |--------|------|------|
 | hls.js 기본 설정 딜레이 | 측정 없음 | 추정 10–15s |
 | setInterval 라이브엣지 강제 seek 후 딜레이 | ✅ ~3s | buffEnd - currentTime > 3s 시 seek |
-| Living-Room 카메라 딜레이 | ✅ ~3s | |
-| Jay-Bed 카메라 딜레이 | 미확인 | 재생 안정화 후 측정 필요 |
+| H.264 카메라 딜레이 | ✅ ~3s | |
+| HEVC 카메라 딜레이 | 미확인 | 타임라인 점프 버그 수정 후 측정 필요 |
+
+### HEVC 카메라 MSE 타임라인 점프 버그 (#16)
+
+| 테스트 | 결과 | 비고 |
+|--------|------|------|
+| 수정 전 ingestion.log "out of range" 경고 횟수 | ❌ 617건 | `Packet duration: -810 / dts: ... out of range` |
+| 수정 전 ingestion.log "pts has no value" 경고 | ❌ 617건 | out of range와 쌍으로 발생 |
+| 수정 전 브라우저 타임라인 동작 | ❌ 점프 (1시1분→1시21분→1시20분→1시1분4초) | uint32 overflow로 ~47721s 점프 |
+| 수정 후 빌드 | ✅ 오류 없음 | LlHlsWriter.cpp 1 파일만 재컴파일 |
+| 수정 후 서버 기동 | ✅ /health 응답 정상 | |
+| 수정 후 브라우저 재생 | 확인 필요 | ingestion-server 재시작 후 측정 |
 
 ---
 

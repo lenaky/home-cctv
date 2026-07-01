@@ -173,6 +173,8 @@ Result<void> LlHlsWriter::writePacket(const AVPacket* pkt, const AVRational& src
     if (out_pkt->pts == AV_NOPTS_VALUE)
         out_pkt->pts = out_pkt->dts = next_dts_;
 
+    int64_t prev_dts = last_dts_;  // save before updating
+
     if (out_pkt->dts <= last_dts_) {
         int64_t diff = (out_pkt->pts != AV_NOPTS_VALUE) ? (out_pkt->pts - out_pkt->dts) : 0;
         out_pkt->dts = last_dts_ + 1;
@@ -180,8 +182,16 @@ Result<void> LlHlsWriter::writePacket(const AVPacket* pkt, const AVRational& src
     }
     last_dts_ = out_pkt->dts;
 
+    // Use actual DTS delta as duration so the muxer's "out of range" check never fires.
+    // Cameras often declare a higher fps in SDP (e.g. 20fps → duration=4500) than they
+    // actually deliver (e.g. 10fps → real spacing ~9000). When declared duration > actual
+    // spacing, FFmpeg movenc ref-check triggers and clobbers pts → corrupt trun durations
+    // → massive MSE timeline jumps in the browser.
     int64_t fallback_dur = av_rescale_q(1, AVRational{1, 30}, out_video_stream_->time_base);
-    if (out_pkt->duration <= 0) out_pkt->duration = fallback_dur;
+    if (prev_dts != AV_NOPTS_VALUE && out_pkt->dts > prev_dts)
+        out_pkt->duration = out_pkt->dts - prev_dts;
+    else if (out_pkt->duration <= 0)
+        out_pkt->duration = fallback_dur;
     next_dts_ = out_pkt->dts + out_pkt->duration;
 
     double pkt_sec = av_q2d(out_video_stream_->time_base) * static_cast<double>(out_pkt->duration);

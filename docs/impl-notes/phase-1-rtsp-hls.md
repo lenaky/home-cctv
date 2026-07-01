@@ -168,6 +168,36 @@ RTSP 수신 백그라운드 스레드가 `camera_repo_->updateStatus()` 호출, 
 
 **수정:** `CameraService::registerCamera`에서 URL 중복 체크 제거. `StreamManager::startStream`에서 이미 스트리밍 중인 카메라의 rtsp_url과 비교해 중복 시 시작 거부. `ActiveStream` 구조체에 `rtsp_url` 필드 추가.
 
+### 16. HEVC 카메라 실제 fps < 선언 fps → fMP4 trun duration 오버플로 → MSE 타임라인 점프 (수정됨)
+
+**증상:** HEVC RTSP 카메라(2880×1620)에서 영상 타임라인이 1시1분1초 → 1시1분21초 → 1시1분20초 → 1시1분4초 식으로 앞뒤로 점프.
+
+**원인 분석 (다층적):**
+
+1. **카메라 선언 fps ≠ 실제 fps:** SDP에 20fps를 선언하므로 FFmpeg RTSP 디먹서가 `pkt->duration = 4500` (90kHz 기준 0.05s)을 설정한다. 그러나 실제 RTP 타임스탬프 간격은 ~9000 ticks (0.1s = 10fps).
+
+2. **파라미터셋 주입 후 DTS 불규칙:** VCL 필터가 파라미터셋 전용 패킷을 드롭하면, IDR 직후 첫 P-frame이 13500 ticks(≈1.5 프레임 간격) 뒤에 위치하는 DTS 갭이 생긴다. 또한 일부 파라미터셋+VCL 합산 패킷이 `DTS = prev_dts + 3690`으로 도착 — 4500보다 810 ticks 짧다.
+
+3. **FFmpeg movenc.c "out of range" 체크 (movenc.c:6737):**
+   ```
+   ref = trk->start_dts + trk->track_duration  // = prev_dts + prev_pkt->duration
+   if (pkt->dts < ref) {
+       pkt->dts = ref + 1;
+       pkt->pts = AV_NOPTS_VALUE;  // ← pts 강제 초기화!
+   }
+   ```
+   `prev_pkt->duration = 4500`이고 실제 DTS 델타 = 3690이면 `3690 < 4500` → 에러 트리거 → `pts = AV_NOPTS_VALUE`. 이후 trun에 `sample_duration = -810`이 기록되고 unsigned 32비트로 해석하면 ≈47721초 → MSE 타임라인이 47721초 앞으로 점프 후 부호 역전으로 뒤로 이동.
+
+4. **ingestion.log에서 617건의 `"Packet duration: -810 / dts: ... out of range"` + `"pts has no value"` 경고 확인.**
+
+**수정 (`LlHlsWriter::writePacket`):**
+- DTS 단조성 보정 직전에 `prev_dts = last_dts_` 저장.
+- `out_pkt->duration`을 카메라 선언값 대신 **실제 DTS 델타** (`out_pkt->dts - prev_dts`)로 설정.
+- `prev_dts == AV_NOPTS_VALUE`(첫 패킷)이거나 delta ≤ 0이면 기존 값 또는 fallback(1/30s) 유지.
+- 결과: `ref = prev_dts + actual_delta`이므로 다음 패킷의 DTS가 항상 `ref` 이상 → "out of range" 에러 없음. trun duration도 실제 재생 시간 반영 → MSE 타임라인 점프 없음.
+
+**부수 효과:** `pkt_sec`도 실제 DTS 델타 기반으로 계산되므로, 플레이리스트의 `DURATION=` 값(초당 0.1s × N frames)과 fMP4 trun의 실제 미디어 시간이 일치한다.
+
 ---
 
 ## 미구현 / 스텁 처리된 항목
