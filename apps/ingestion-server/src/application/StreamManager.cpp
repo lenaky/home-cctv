@@ -24,10 +24,18 @@ Result<domain::StreamInfo> StreamManager::startStream(const std::string& camera_
     if (cam_result.is_err()) return Result<domain::StreamInfo>::Err(cam_result.error());
     auto cam = cam_result.value();
 
+    // If a previous stream for this camera died (max reconnect), auto-clean it up first.
     {
         std::shared_lock rl(streams_mutex_);
-        if (streams_.count(camera_id))
+        auto existing = streams_.find(camera_id);
+        if (existing != streams_.end() &&
+            existing->second->info.status != domain::StreamStatus::Error)
             return Result<domain::StreamInfo>::Err("Stream already active: " + camera_id);
+    }
+    stopStream(camera_id);  // no-op if not in map; removes zombie if in Error state
+
+    {
+        std::shared_lock rl(streams_mutex_);
         for (const auto& [id, s] : streams_) {
             if (s->rtsp_url == cam.rtsp_url)
                 return Result<domain::StreamInfo>::Err(
@@ -87,7 +95,7 @@ Result<domain::StreamInfo> StreamManager::startStream(const std::string& camera_
             event_publisher_->onStreamStarted(camera_id);
         },
         // PacketCallback: video + audio packets
-        [this, camera_id, hls_ptr, rec_ptr](AVPacket* pkt, const AVStream* src_st) {
+        [camera_id, hls_ptr, rec_ptr](AVPacket* pkt, const AVStream* src_st) {
             if (src_st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
                 auto hls_res = hls_ptr->writePacket(pkt, src_st->time_base);
                 if (hls_res.is_err())
@@ -97,8 +105,10 @@ Result<domain::StreamInfo> StreamManager::startStream(const std::string& camera_
                 hls_ptr->writeAudioPacket(pkt, src_st->time_base);
             }
         },
-        [camera_id, this](const std::string& error) {
+        [camera_id, info_ptr, this](const std::string& error) {
             spdlog::warn("Stream error [{}]: {}", camera_id, error);
+            // Mark stream as errored so startStream can auto-restart without an explicit stop
+            info_ptr->status = domain::StreamStatus::Error;
             camera_repo_->updateStatus(camera_id, domain::CameraStatus::Error, error);
             event_publisher_->onStreamError(camera_id, error);
         });
