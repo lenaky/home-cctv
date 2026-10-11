@@ -7,6 +7,35 @@ automated review and testing.
 
 See project memory for the confirmed tech stack, hexagonal architecture, and phase roadmap — always check those before proposing tech/architecture changes.
 
+## Mandatory procedure (모든 작업의 필수 절차)
+
+**단순 질의응답을 제외한** 이 리포지토리의 모든 작업은 아래 6단계를 반드시 거친다. 단계를
+건너뛰거나 순서를 바꾸지 않는다. 아래 절차는 바로 다음에 나오는 Superpowers 스킬 워크플로우와
+함께 적용되며, 두 절차가 상충할 경우 이 절차가 우선한다.
+
+1. **근본 의미 파악** — 사용자의 요청을 완벽에 가깝게 이해하기 위해, 그 요청의 근본/근원적인
+   의미를 파악하고 필요한 사항을 사용자에게 질문한다. 모호한 요구사항을 추측해서 진행하지 않는다.
+2. **설계** — 1단계에서 파악한 요청을 해결할 접근 순서·방법과 검증에 쓸 테스트케이스를
+   설계한다. **Sonnet 5 / high effort**로 수행한다.
+3. **설계 리뷰** — 2단계 설계를 **Opus 5.5**로 리뷰한다. Opus 5.5가 승인할 때까지 2~3단계를
+   반복한다. Opus가 거절하면 거절 이유를 상세히 2단계에 전달하여 재설계한다.
+4. **구현** — 작업 복잡도에 따라 모델을 나누어 서브에이전트 방식으로 구현한다.
+   - 중간 이상 난이도: **Sonnet 5 / medium effort**
+   - 중간 미만 난이도: **Haiku 5.5**
+5. **검증** — 2단계에서 미리 설계해둔 테스트케이스로 4단계의 구현 결과를 검증한다. 검증에
+   실패하면 4단계로 돌아가 재구현한다 (4~5단계 반복).
+6. **교훈 기록** — 3~5단계를 거치며 얻은 교훈(lesson & learned)을 `compound/` 디렉토리에
+   저장하고, 그 내용의 인덱스를 아래 "compound/ — 누적 교훈 인덱스" 섹션에 유지한다. 이는
+   향후 유사 작업을 하는 에이전트가 참고할 수 있도록 하기 위함이다.
+
+### compound/ — 누적 교훈 인덱스
+
+`compound/`는 3~5단계(설계 리뷰, 구현, 검증)를 거치며 얻은 교훈을 기록하는 디렉토리다.
+전체 정책/작성 형식은 [`compound/README.md`](compound/README.md) 참고. 새 항목을 추가할
+때마다 아래 인덱스에 한 줄씩 추가한다 (형식: `- [제목](compound/파일명.md) — 한 줄 요약`).
+
+- (아직 항목 없음)
+
 ## Development workflow: Superpowers
 
 This project follows the [obra/superpowers](https://github.com/obra/superpowers) skill workflow for all
