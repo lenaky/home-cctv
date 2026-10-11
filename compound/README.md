@@ -13,3 +13,4 @@ CLAUDE.md의 "Mandatory procedure" 3~5단계(설계 리뷰, 구현, 검증)를 �
 | # | 제목 | 어떤 상황에 적용 가능한가 |
 |---|---|---|
 | 001 | [Opus 5.5 설계 리뷰 루프는 라운드가 늘수록 희귀 엣지케이스로 수렴한다](001-opus-review-loop-diminishing-returns.md) | 3단계(설계 리뷰) 반복이 3라운드를 넘기고 지적 사항이 이 리포 실제 환경과 무관해질 때 |
+| 002 | [vcpkg 미설치 환경에서는 brew로 즉시 검증하고 CMake를 pkg-config로 통일](002-vcpkg-vs-brew-local-verification.md) | 여러 서비스가 같은 서드파티 라이브러리를 쓰거나, vcpkg 없는 환경에서 빌드를 검증해야 할 때 |

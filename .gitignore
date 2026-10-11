@@ -1,0 +1,10 @@
+build/
+out/
+*.o
+*.obj
+.cache/
+compile_commands.json
+vcpkg_installed/
+node_modules/
+dist/
+.DS_Store

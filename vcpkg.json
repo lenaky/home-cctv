@@ -1,0 +1,11 @@
+{
+  "name": "home-cctv",
+  "version": "0.1.0",
+  "dependencies": [
+    "ffmpeg",
+    "sqlite3",
+    "boost-asio",
+    "cpp-httplib",
+    "gtest"
+  ]
+}

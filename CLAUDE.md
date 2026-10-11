@@ -36,6 +36,62 @@ See project memory for the confirmed tech stack, hexagonal architecture, and pha
 
 - [Opus 5.5 설계 리뷰 루프는 라운드가 늘수록 희귀 엣지케이스로 수렴한다](compound/001-opus-review-loop-diminishing-returns.md) — 3라운드 넘게 반려가 이어지고 지적 사항이 이 리포 환경과 무관해지면 사용자에게 계속/확정을 물어본다
 
+## Phase 1 스켈레톤: 빌드/테스트/린트
+
+전체 설계 요약은 [`docs/design.md`](docs/design.md), 판단 근거는 [`docs/decisions/`](docs/decisions/README.md) 참고.
+
+### 디렉토리 구조 / 모듈 책임
+
+```
+services/ingestion-server/   — RTSP 수집 + 카메라 CRUD + 녹화 + LL-HLS 세그먼트 생성 (포트 8080)
+services/egress-server/      — 실시간 시청(LL-HLS/WebRTC) + 녹화 재생 서빙 (포트 8090)
+web-admin/                   — React+TS+Vite+Tailwind 웹 어드민 (최소 골격)
+deploy/                      — macOS launchd / Windows 서비스 등록 설정
+```
+각 서비스는 hexagonal: `domain/`(엔티티·port·Result<T,E>, 외부 의존 없음) →
+`application/`(usecase, port만 의존) → `adapters/inbound|outbound/`(HTTP·SQLite·FFmpeg·IPC 구현)
+→ `main.cpp`(합성 루트). `ingestion-server`/`egress-server`는 컴파일 타임 의존이 없다
+(런타임으로만 REST/공유 파일시스템/SQLite/로컬 IPC로 연결).
+
+### C++ 백엔드 빌드 (vcpkg 전제, 로컬 brew로도 검증 가능 — 아래 "로컬 검증" 참고)
+```
+cmake --preset default      # 또는: cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH=<prefix>
+cmake --build build
+```
+### 테스트 (GoogleTest + CTest)
+```
+ctest --test-dir build --output-on-failure
+```
+### 린트/포맷 (clang-format + clang-tidy, 둘 다 저장소 루트의 `.clang-format`/`.clang-tidy` 사용)
+```
+clang-format -i $(find services -name '*.h' -o -name '*.cpp')   # 포맷 적용
+clang-format --dry-run --Werror $(find services -name '*.h' -o -name '*.cpp')  # 포맷 검사만
+run-clang-tidy -p build $(find services -name '*.cpp' | grep -v tests/)        # 린트
+```
+`.clang-tidy`는 `WarningsAsErrors: ''`로 설정돼 있어 경고는 빌드를 막지 않는다 (스켈레톤
+단계에서 스텁 코드가 경고로 실패하지 않도록 하는 의도적 선택).
+
+### 로컬 검증 (vcpkg 미설치 환경)
+vcpkg로 FFmpeg를 소스 빌드하면 매우 오래 걸릴 수 있다. Homebrew에 ffmpeg/sqlite3/cpp-httplib/
+googletest/llvm(clang-tidy)이 있으면 `-DCMAKE_PREFIX_PATH=/opt/homebrew`만 추가해 같은 CMake
+구성으로 빌드/테스트/린트를 검증할 수 있다 (각 서비스 CMakeLists.txt가 FFmpeg/sqlite3를
+PkgConfig로 찾도록 되어 있어 vcpkg/brew 양쪽에서 동작). → [[compound/002-vcpkg-vs-brew-local-verification]]
+
+### web-admin
+```
+cd web-admin && npm install && npm run build && npm run lint
+```
+
+### 코딩 규칙 (CLAUDE.md 상단 "반드시 지킬 것"의 구체화)
+- **에러는 전부 명시적 반환**: 모든 포트/usecase/adapter 메서드는 `Result<T>`(또는
+  `Result<void>`)를 반환한다. 예외를 던지지 않는다 (→ [[docs/decisions/001-error-handling-result-type]]).
+- **전역 상태 금지**: 모든 의존성은 생성자 주입(참조). 소유권은 각 서비스 `main.cpp`의
+  합성 루트에만 있다.
+- **hexagonal/clean**: `domain` → `application` → `adapters` → `main.cpp` 방향으로만
+  의존. 역방향 의존 금지, 두 서비스 간 컴파일 타임 의존 금지.
+- **SOLID**: port(인터페이스)는 단일 책임으로 쪼개고, adapter는 port를 구현하는 것 외의
+  역할을 갖지 않는다. 구체 타입이 아니라 port 인터페이스에 의존한다(DIP).
+
 ## Development workflow: Superpowers
 
 This project follows the [obra/superpowers](https://github.com/obra/superpowers) skill workflow for all

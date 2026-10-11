@@ -15,3 +15,4 @@
 | 004 | [SQLite 동시 접근: WAL + 각자 커넥션](004-sqlite-concurrent-access-wal.md) | 읽기전용 분리 대신 WAL+재시도로 양쪽 접근 허용 |
 | 005 | [녹화 저장 위치는 전역 설정](005-recording-storage-global-config.md) | Camera 엔티티에서 storage 필드 제거, SystemConfig로 이동 |
 | 006 | [Phase 1 운영 범위](006-phase1-ops-scope.md) | OS 네이티브 데몬 관리(launchd/서비스), 인증은 Phase 2로 유지 |
+| 007 | [FFmpeg/sqlite3는 PkgConfig로 링크](007-ffmpeg-sqlite3-via-pkgconfig.md) | vcpkg 전용 CMake 타겟 이름 대신 pkg-config로 통일해 패키지 매니저 무관하게 동작 |
