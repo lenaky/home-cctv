@@ -34,7 +34,7 @@ See project memory for the confirmed tech stack, hexagonal architecture, and pha
 전체 정책/작성 형식은 [`compound/README.md`](compound/README.md) 참고. 새 항목을 추가할
 때마다 아래 인덱스에 한 줄씩 추가한다 (형식: `- [제목](compound/파일명.md) — 한 줄 요약`).
 
-- (아직 항목 없음)
+- [Opus 5.5 설계 리뷰 루프는 라운드가 늘수록 희귀 엣지케이스로 수렴한다](compound/001-opus-review-loop-diminishing-returns.md) — 3라운드 넘게 반려가 이어지고 지적 사항이 이 리포 환경과 무관해지면 사용자에게 계속/확정을 물어본다
 
 ## Development workflow: Superpowers
 
